@@ -28,6 +28,7 @@ import (
 	"strings"
 	"math/rand/v2"
 	"math"
+	"path/filepath"
 )
 
 
@@ -38,14 +39,46 @@ import (
 //                 PBM has no max value
 //                 PBM has .pbm file extension
 //                 
-// Method Pre-conditions: 
-// Method Post-conditions: 
-// Method Return Value: 
+// Method Pre-conditions: filename must be a valid file name, pixelList must
+//                        contain the image pixel data, and rows and columns
+//                        must match the dimensions of the image.
+// Method Post-conditions: a PBM file with the same base name as the input file
+//                         is created and written to disk.
+// Method Return Value: none
 //                      
-// Method Parameters: 
+// Method Parameters: filename - name of the original PGM file
+//                    pixelList - list of grayscale pixel values from the PGM
+//                    rows - number of image rows
+//                    columns - number of image columns
+//                    segValue - segmentation threshold used to decide whether
+//                               each output pixel is black or white
 ////////////////////////////////////////////////////////////////////////////////
 func createPBMFile(filename string, pixelList []int, rows int, columns int, segValue float64) {
+	ext := filepath.Ext(filename)
+	outputFile := strings.TrimSuffix(filename, ext) + ".pbm"
 
+	f, err := os.Create(outputFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not create PBM file: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	fmt.Fprintln(f, "P1")
+	fmt.Fprintln(f, "# created from PGM by segmentation.go")
+	fmt.Fprintf(f, "%d %d\n", columns, rows)
+
+	for i := 0; i < len(pixelList); i++ {
+		if float64(pixelList[i]) < segValue {
+			fmt.Fprint(f, "1 ")
+		} else {
+			fmt.Fprint(f, "0 ")
+		}
+
+		if (i+1)%columns == 0 {
+			fmt.Fprintln(f)
+		}
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -89,7 +122,7 @@ func bestSegmentation(pixelList []int) (segValue float64) {
 			}
 		}
 		segValue = ((float64(topSum)/float64(topCount)) + (float64(bottomSum)/float64(bottomCount)))/2.0
-		//fmt.Fprintf(os.Stdout, "segValue: %f, preMean: %f, loop count: %d\n", segValue, previousMean, loopCount)
+
 		if math.Abs(segValue - previousMean) < 0.001 || loopCount >= 100 {
 			return segValue
 		} else {
@@ -101,6 +134,7 @@ func bestSegmentation(pixelList []int) (segValue float64) {
 	
 	return segValue
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Method Name: parseIntegers
@@ -142,8 +176,6 @@ func readPGMFile(f *os.File) ([]int, int, int, int) {
 
 	input := bufio.NewScanner(f)
 
-	//TODO: handle potential erros from input.Err()
-	// check to see if P2 is firstline
 	if input.Scan() {
 		fileID := input.Text()
 		if fileID != "P2" {
@@ -152,20 +184,18 @@ func readPGMFile(f *os.File) ([]int, int, int, int) {
 		}
 	}
 
-	// skip comments, find row & column values
 	for input.Scan() {
 		line := input.Text()
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		_, err := fmt.Sscan(line, &rows, &columns)
+		_, err := fmt.Sscan(line, &columns, &rows)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: row and column designations are not numbers. %v\n", err)
 		}
-		break;
+		break
 	}
 
-	// read in max brightness designation
 	if input.Scan() {
 		var err error
 		maxBright, err = strconv.Atoi(input.Text()) 
@@ -174,17 +204,15 @@ func readPGMFile(f *os.File) ([]int, int, int, int) {
 		}
 	}
 
-	// read through the rest of the file and get pixel data.
 	for input.Scan() {
 		line := input.Text()
 		pixelValues, err := parseIntegers(line)
 		if err == nil {
-			pixelList = append(pixelList, pixelValues...);
+			pixelList = append(pixelList, pixelValues...)
 		}
 	}
 	return pixelList, maxBright, rows, columns
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 // Method Name: transformToPBM
 // Method Purpose: Open file and pull pixel information from file, use pixel
@@ -203,17 +231,9 @@ func transformToPBM(filename string) {
 		fmt.Fprintf(os.Stderr, "Error: segmentation: %v\n", err)
 		os.Exit(1)
 	}
-	pixelList, maxBright, rows, columns := readPGMFile(f)
-	
-	//fmt.Fprintf(os.Stdout, "pixelList: %v\n", pixelList)
-	//fmt.Fprintf(os.Stdout, "maxBright: %d\n", maxBright)
-	//fmt.Fprintf(os.Stdout, "rows: %d\n", rows)
-	//fmt.Fprintf(os.Stdout, "columns: %d\n", columns)
+	pixelList, _, rows, columns := readPGMFile(f)
+
 	segValue := bestSegmentation(pixelList)
-	//fmt.Fprintf(os.Stdout, "Segmentation Value: %f\n", segValue)	
-		
-	//TODO: parsefile from extension
-	//TODO: create PBM file
 	createPBMFile(filename, pixelList, rows, columns, segValue) 
 	f.Close()
 }
@@ -230,7 +250,6 @@ func transformToPBM(filename string) {
 ////////////////////////////////////////////////////////////////////////////////
 func main() {
 	filename := ""
-	// first argument is program name, second is the PGM Filename.
 	if len(os.Args) != 2 {
 		fmt.Fprintf(os.Stderr, "Error: Usage: segmentation <PGMFilename>\n")
 		os.Exit(1)
@@ -239,8 +258,3 @@ func main() {
 	transformToPBM(filename)
 	fmt.Println("File transfer from PGM to PBM complete\n")
 }
-
-
-
-
-
